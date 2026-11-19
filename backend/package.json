@@ -1,0 +1,15 @@
+{
+  "name": "seminar-demo-backend",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "start": "node ./bin/www",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "dockerode": "^5.0.1",
+    "express": "^5.3.0",
+    "mongodb": "^6.20.0",
+    "morgan": "^1.10.1"
+  }
+}

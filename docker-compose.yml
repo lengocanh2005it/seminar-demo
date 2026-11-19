@@ -1,0 +1,142 @@
+name: seminar-demo
+
+# Khối dùng chung cho cả 9 node mongod: cùng image, healthcheck ping, cùng network.
+x-mongo-node: &mongo-node
+  image: mongo:8.0
+  restart: unless-stopped
+  networks:
+    - cluster
+  healthcheck:
+    test: ["CMD-SHELL", "mongosh --quiet --eval 'db.adminCommand({ping:1}).ok' | grep 1"]
+    interval: 5s
+    timeout: 5s
+    retries: 30
+
+services:
+  # Config server replica set: lưu metadata (chunk nào ở shard nào) cho mongos.
+  # Bắt buộc 3 node và cờ --configsvr.
+  config1:
+    <<: *mongo-node
+    container_name: seminar-config1
+    command: ["mongod", "--port", "27017", "--bind_ip_all", "--replSet", "configRS", "--configsvr"]
+    volumes: ["config1-data:/data/db"]
+    networks: { cluster: { aliases: [config1] } }
+  config2:
+    <<: *mongo-node
+    container_name: seminar-config2
+    command: ["mongod", "--port", "27017", "--bind_ip_all", "--replSet", "configRS", "--configsvr"]
+    volumes: ["config2-data:/data/db"]
+    networks: { cluster: { aliases: [config2] } }
+  config3:
+    <<: *mongo-node
+    container_name: seminar-config3
+    command: ["mongod", "--port", "27017", "--bind_ip_all", "--replSet", "configRS", "--configsvr"]
+    volumes: ["config3-data:/data/db"]
+    networks: { cluster: { aliases: [config3] } }
+
+  # Shard 1 = replica set shard1RS, 3 node. Mỗi node publish một cổng riêng trên
+  # 127.0.0.1 để backend đọc trực tiếp từng member khi kiểm tra bản sao.
+  shard1a:
+    <<: *mongo-node
+    container_name: seminar-shard1a
+    command: ["mongod", "--port", "27017", "--bind_ip_all", "--replSet", "shard1RS", "--shardsvr"]
+    volumes: ["shard1a-data:/data/db"]
+    ports: ["127.0.0.1:27117:27017"]
+    networks: { cluster: { aliases: [shard1a] } }
+  shard1b:
+    <<: *mongo-node
+    container_name: seminar-shard1b
+    command: ["mongod", "--port", "27017", "--bind_ip_all", "--replSet", "shard1RS", "--shardsvr"]
+    volumes: ["shard1b-data:/data/db"]
+    ports: ["127.0.0.1:27118:27017"]
+    networks: { cluster: { aliases: [shard1b] } }
+  shard1c:
+    <<: *mongo-node
+    container_name: seminar-shard1c
+    command: ["mongod", "--port", "27017", "--bind_ip_all", "--replSet", "shard1RS", "--shardsvr"]
+    volumes: ["shard1c-data:/data/db"]
+    ports: ["127.0.0.1:27119:27017"]
+    networks: { cluster: { aliases: [shard1c] } }
+
+  # Shard 2 = replica set shard2RS, 3 node. Backend không được phép stop shard2.
+  shard2a:
+    <<: *mongo-node
+    container_name: seminar-shard2a
+    command: ["mongod", "--port", "27017", "--bind_ip_all", "--replSet", "shard2RS", "--shardsvr"]
+    volumes: ["shard2a-data:/data/db"]
+    ports: ["127.0.0.1:27217:27017"]
+    networks: { cluster: { aliases: [shard2a] } }
+  shard2b:
+    <<: *mongo-node
+    container_name: seminar-shard2b
+    command: ["mongod", "--port", "27017", "--bind_ip_all", "--replSet", "shard2RS", "--shardsvr"]
+    volumes: ["shard2b-data:/data/db"]
+    ports: ["127.0.0.1:27218:27017"]
+    networks: { cluster: { aliases: [shard2b] } }
+  shard2c:
+    <<: *mongo-node
+    container_name: seminar-shard2c
+    command: ["mongod", "--port", "27017", "--bind_ip_all", "--replSet", "shard2RS", "--shardsvr"]
+    volumes: ["shard2c-data:/data/db"]
+    ports: ["127.0.0.1:27219:27017"]
+    networks: { cluster: { aliases: [shard2c] } }
+
+  # Job một lần: initiate 3 replica set rồi chờ mỗi set bầu xong Primary.
+  # Shard dùng service_started (không phải healthy) vì shard chỉ healthy sau khi
+  # config server có Primary — chờ healthy sẽ deadlock.
+  replica-sets-init:
+    image: mongo:8.0
+    depends_on:
+      config1: { condition: service_healthy }
+      config2: { condition: service_healthy }
+      config3: { condition: service_healthy }
+      shard1a: { condition: service_started }
+      shard1b: { condition: service_started }
+      shard1c: { condition: service_started }
+      shard2a: { condition: service_started }
+      shard2b: { condition: service_started }
+      shard2c: { condition: service_started }
+    networks: [cluster]
+    volumes: ["./mongo:/scripts:ro"]
+    entrypoint: ["mongosh", "--quiet", "--host", "config1:27017", "--file", "/scripts/init-replica-sets.js"]
+    restart: "no"
+
+  # Router duy nhất ứng dụng kết nối tới; đọc metadata từ configRS.
+  mongos:
+    image: mongo:8.0
+    container_name: seminar-mongos
+    command: ["mongos", "--bind_ip_all", "--configdb", "configRS/config1:27017,config2:27017,config3:27017"]
+    depends_on:
+      replica-sets-init: { condition: service_completed_successfully }
+    networks: { cluster: { aliases: [mongos] } }
+    ports: ["127.0.0.1:27017:27017"]
+    healthcheck:
+      test: ["CMD-SHELL", "mongosh --quiet --eval 'db.adminCommand({ping:1}).ok' | grep 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  # Job một lần: addShard + enableSharding + shardCollection theo hashed docId.
+  # Phải chạy sau khi mongos healthy (README có lệnh riêng).
+  sharding-init:
+    image: mongo:8.0
+    depends_on:
+      mongos: { condition: service_healthy }
+    networks: [cluster]
+    volumes: ["./mongo:/scripts:ro"]
+    entrypoint: ["mongosh", "--quiet", "--host", "mongos:27017", "--file", "/scripts/init-sharding.js"]
+    restart: "no"
+
+networks:
+  cluster: {}
+
+volumes:
+  config1-data:
+  config2-data:
+  config3-data:
+  shard1a-data:
+  shard1b-data:
+  shard1c-data:
+  shard2a-data:
+  shard2b-data:
+  shard2c-data:
