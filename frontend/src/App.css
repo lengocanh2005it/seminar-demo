@@ -361,3 +361,6 @@ footer{font-size:10px}
 .side-stack .dist-wrap{margin-bottom:18px}
 .side-stack .metrics-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
 @media(min-width:1100px){.content-grid{grid-template-columns:minmax(0,1fr) minmax(0,1.08fr);align-items:stretch}}
+@media(min-width:1100px){.controls-panel{display:flex;flex-direction:column}.controls-panel .action-list{flex:1;grid-auto-rows:1fr}.controls-panel .action-button,.controls-panel .walkthrough-checkpoint{align-items:center}}
+.side-stack .distribution-panel .dist-wrap{flex:1;align-content:center;margin-bottom:0}
+.side-stack .distribution-panel .note{margin-top:18px}
