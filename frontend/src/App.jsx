@@ -125,7 +125,7 @@ function ProofCompare({ proofs }) {
       <ol className="proof-steps">
         <li><b className="n">03</b><span><strong>Đọc bản sao</strong>Bấm "Kiểm tra bản sao": cùng một bản ghi được đọc từ Primary và cả hai Secondary.</span></li>
         <li><b className="n">04</b><span><strong>Tắt Primary</strong>Hệ thống tự chụp bản "trước failover" ngay trước khi tắt node.</span></li>
-        <li><b className="n">03</b><span><strong>So sánh</strong>Khi sơ đồ có Primary mới, bấm lại bước 03 để đặt hai bản chụp cạnh nhau.</span></li>
+        <li><b className="n">05</b><span><strong>So sánh</strong>Khi sơ đồ có Primary mới, bấm lại bước 03 để đặt hai bản chụp cạnh nhau.</span></li>
       </ol>
     );
   }
