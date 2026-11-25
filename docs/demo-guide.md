@@ -78,11 +78,11 @@ Result: the terminal logs the `docId`, the shard (`shard1`) and **which member i
 
 ### Step 03 — Verify a replica copy
 
-Click **Kiểm tra bản sao** (Verify replica copy). The backend picks a `demo-*` document, finds the shard holding it, then connects **directly** to a Secondary to read it.
+Click **Kiểm tra bản sao** (Verify replica copy). The backend pins one `demo-*` document that routes to **shard1** (same `docId` every click), reads it via `mongos`, then connects **directly** to every healthy shard1 member (Primary and Secondaries) and reads it back.
 
 > Say: "This is the proof of replication: the same record exists on a Secondary node, not just the Primary. With only one copy, that node dying would mean data loss."
 
-Result: the terminal names the Secondary and shard where the copy was read.
+Result: the **Bằng chứng bản sao** panel shows the full document (`_id`, `docId`, `category`, `value`, `createdAt`) as read from each node, labelled with its role. The backend fails the step if any copy differs from the `mongos` copy. Step 04 also takes a "before" snapshot automatically right before stopping the Primary.
 
 ### Step 04 — Stop Shard 1's Primary
 
@@ -96,7 +96,7 @@ Result: after ~2 seconds the node's card turns **red / Unavailable** on the map.
 
 ### Step 05 — Verify the new Primary can write
 
-Wait until the map shows a different node as **PRIMARY** in shard1 (usually a few seconds), then **click step 02 again**.
+Wait until the map shows a different node as **PRIMARY** in shard1 (usually a few seconds), then **click step 02 again**, then **click step 03 again** to take the "after" snapshot.
 
 > Say: "The replica set just elected a new Primary. I'll run read/write again — it still succeeds, even though the old Primary is down."
 

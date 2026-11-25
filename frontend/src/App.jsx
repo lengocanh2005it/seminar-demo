@@ -39,6 +39,8 @@ function translateEvent(message) {
     .replace(/^Read\/write succeeded via mongos \((.+)\) → (.+) · targeted$/, "Đọc/ghi thành công qua mongos ($1) → $2 · đúng shard")
     .replace(/^Read\/write succeeded via mongos \((.+)\) → shard unknown \(collection not sharded or not created yet\)$/, "Đọc/ghi thành công qua mongos ($1) → chưa xác định shard (collection chưa shard hoặc chưa có dữ liệu)")
     .replace(/^Verified (.+) on Secondary (.+) \((.+)\)$/, "Đã xác minh $1 trên Secondary $2 ($3)")
+    .replace(/^Captured pre-failover copy of (.+) \(Primary (.+)\)$/, "Đã chụp bản ghi $1 trước failover (Primary $2)")
+    .replace(/^Skipped pre-failover copy: (.+)$/, "Bỏ qua bản chụp trước failover: $1")
     .replace(/^Stopped current Primary (.+) \((.+)\)$/, "Đã tắt Primary hiện tại $1 ($2)")
     .replace(/^(.+): new primary observed (.+) \(previous (.+)\)$/, "$1: phát hiện Primary mới $2 (trước đó $3)")
     .replace(/^Restarted (.+); waiting for it to rejoin the replica set$/, "Đã khởi động lại $1; chờ node tham gia lại replica set")
@@ -55,6 +57,7 @@ export default function App() {
   const [theme, setTheme] = useState(() => localStorage.getItem("seminar-demo-theme") === "dark" ? "dark" : "light");
   const [status, setStatus] = useState(null);
   const [events, setEvents] = useState([]);
+  const [proofs, setProofs] = useState([]);
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
   const [pulseNode, setPulseNode] = useState("");
@@ -68,9 +71,10 @@ export default function App() {
 
   // Nháy card của node được nhắc trong sự kiện mới nhất, để mắt người xem không phải
   // tự dò tên trong log rồi tìm lên sơ đồ.
-  const applySnapshot = useCallback((nextStatus, nextEvents) => {
+  const applySnapshot = useCallback((nextStatus, nextEvents, nextProofs) => {
     setStatus(nextStatus);
     setEvents(nextEvents);
+    setProofs(nextProofs);
     const match = nextEvents[0]?.message.match(/shard[12][abc]/);
     clearTimeout(pulseTimer.current);
     if (!match) return;
@@ -83,7 +87,7 @@ export default function App() {
   const refresh = useCallback(async () => {
     try {
       const [nextStatus, nextEvents] = await Promise.all([request("/status"), request("/events")]);
-      applySnapshot(nextStatus, nextEvents.events);
+      applySnapshot(nextStatus, nextEvents.events, nextEvents.proofs);
     } catch (err) {
       setError(describeError(err.message));
     }
@@ -96,8 +100,8 @@ export default function App() {
     // Nối lại được thì xoá banner "mất kết nối" cũ.
     stream.onopen = () => setError("");
     stream.onmessage = ({ data }) => {
-      const { status: nextStatus, events: nextEvents } = JSON.parse(data);
-      applySnapshot(nextStatus, nextEvents);
+      const { status: nextStatus, events: nextEvents, proofs: nextProofs } = JSON.parse(data);
+      applySnapshot(nextStatus, nextEvents, nextProofs);
     };
     stream.onerror = () => setError("Mất kết nối luồng trực tiếp. Đang thử lại…");
     return () => {
@@ -265,11 +269,36 @@ export default function App() {
             <button className={`action-button danger ${actionState("stop", "failover")}`} disabled={!!busy || !!status?.stoppedNode} onClick={() => act("stop", "/failover/stop-primary")}><span className="action-icon">04</span><span><b>Tắt Primary của Shard 1</b><small>{status?.stoppedNode ? `Đã tắt: ${status.stoppedNode} · chờ Primary mới` : "Tắt Primary và quan sát bầu cử"}</small></span><span className="arrow">↗</span></button>
             {/* Bước 05 không có endpoint riêng: nó là "bấm lại bước 02" sau khi bầu cử xong,
                 nên đánh dấu ✓ dựa trên số lần đã chạy read-write (> 1). */}
-            <div className={`walkthrough-checkpoint ${readWriteCount > 1 ? "is-done" : ""}`}><span className="checkpoint-number">05</span><span><b>Kiểm tra Primary mới có ghi được</b><small>Khi sơ đồ hiện Primary mới, bấm lại bước 02. Terminal ghi rõ shard1 và Primary đã nhận lệnh ghi.</small></span></div>
+            <div className={`walkthrough-checkpoint ${readWriteCount > 1 ? "is-done" : ""}`}><span className="checkpoint-number">05</span><span><b>Kiểm tra Primary mới có ghi được</b><small>Khi sơ đồ hiện Primary mới, bấm lại bước 02 (ghi) rồi bước 03 (đọc lại đúng bản ghi cũ). Đối chiếu hai bản chụp ở bảng bằng chứng.</small></span></div>
             <button className={`action-button ${actionState("restart", "restart")}`} disabled={!!busy || !status?.stoppedNode} onClick={() => act("restart", "/failover/restart-node")}><span className="action-icon">06</span><span><b>Khởi động lại node đã tắt</b><small>Xác nhận node tham gia lại với vai trò Secondary</small></span><span className="arrow">↗</span></button>
           </div>
           {busy && <p className="busy-state"><span className="spinner" /> Đang chạy {BUSY_LABELS[busy] || busy}…</p>}
         </article>
+      </section>
+
+      {/* Nguyên document đọc trực tiếp từ từng node, không phải log tóm tắt. Bấm bước 03 trước
+          và sau bước 04 để có hai bản chụp cùng docId, khác Primary. */}
+      <section className="panel proof-panel">
+        <div className="panel-heading"><div><p className="eyebrow">BẰNG CHỨNG BẢN SAO</p><h2>Cùng một bản ghi, đọc từ từng node</h2></div><span className="step-index">BƯỚC 03</span></div>
+        {proofs.length ? (
+          <div className="proof-grid">
+            {proofs.map((proof) => (
+              <article className="proof-card" key={proof.id}>
+                <header>
+                  <strong>{proof.trigger === "before-stop" ? `Trước khi tắt ${proof.primary?.split(":")[0]} (tự chụp)` : proof.stoppedNode ? `Sau khi tắt ${proof.stoppedNode}` : "Cụm đủ 3 node"}</strong>
+                  <time>{new Date(proof.at).toLocaleTimeString([], { hour12: false })}</time>
+                </header>
+                <p className="proof-meta">docId <code>{proof.docId}</code> · {proof.shard} · Primary lúc đọc: <b>{proof.primary?.split(":")[0] ?? "không rõ"}</b></p>
+                {[{ node: "mongos", role: "ROUTER", document: proof.viaMongos }, ...proof.copies].map((copy) => (
+                  <div className="proof-copy" key={copy.node}>
+                    <div><b>{copy.node.split(":")[0]}</b> <StatePill state={copy.role} /></div>
+                    <pre>{copy.document ? JSON.stringify(copy.document, null, 2) : copy.error || "Chưa có bản ghi"}</pre>
+                  </div>
+                ))}
+              </article>
+            ))}
+          </div>
+        ) : <p className="empty-state">Chưa có bản chụp. Bấm bước 03; bấm lại sau khi bầu Primary mới để so sánh.</p>}
       </section>
 
       <section className="events-panel">

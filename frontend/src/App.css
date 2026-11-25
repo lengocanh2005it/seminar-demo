@@ -218,3 +218,11 @@ footer{font-size:10px}
 @media(max-width:680px){.terminal-line{grid-template-columns:12px 62px 1fr;align-items:start}.terminal-line .terminal-operation{grid-column:2}.terminal-line .terminal-id{grid-column:3}.terminal-line .terminal-message{grid-column:2/-1;white-space:normal;overflow-wrap:anywhere}.terminal-statusbar{flex-wrap:wrap}}
 @media(max-width:899px){.eyebrow,.metric-label,.step-index,.busy-state,.panel-copy,.distribution-meta span,.note p,.walkthrough-copy,.action-button small,.walkthrough-checkpoint small{font-size:12px}.terminal-hint,.empty-state,.node-health,.shard-heading-copy small,.shard-doc-count,.config-copy small,.config-members i,.replication-guide{font-size:11px}.node-card .state-pill,.node-heading strong,.metric-foot,.architecture-tag small,.action-icon,.checkpoint-number,.distribution-meta strong,.replica-title strong,.member-name,.error-banner,.terminal-title,.terminal-live,footer{font-size:11px}.panel-heading h2{font-size:18px}.action-button b,.walkthrough-checkpoint b{font-size:13px}.brand,.connection,.live-label{font-size:11px}.terminal-screen{font-size:12px}.terminal-line time,.terminal-operation,.terminal-id{font-size:11px}}
 .topology-panel .walkthrough-copy,.distribution-panel .panel-copy,.controls-panel .note p{font-size:13px;line-height:1.55}
+
+.proof-panel{margin-top:14px}
+.proof-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:12px}
+.proof-card{border:1px solid var(--theme-border);border-radius:8px;padding:12px;background:var(--theme-surface-raised)}
+.proof-card header{display:flex;justify-content:space-between;gap:8px}
+.proof-meta{font-size:12px;color:var(--theme-muted);margin:6px 0}
+.proof-copy{margin-top:8px}
+.proof-copy pre{margin:4px 0 0;padding:8px;border-radius:6px;background:var(--theme-page);font-size:11px;overflow:auto}

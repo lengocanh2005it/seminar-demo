@@ -1,39 +1,25 @@
-// Tìm bản sao của document trên một node Secondary. Trả null nếu chưa node nào có
-// (ví dụ vừa ghi xong, replication chưa kịp).
-async function findSecondaryCopy(docId, shardClients, getReplicaSetStatus) {
-  let lastError;
+// Đọc document trực tiếp từ MỌI member khoẻ của một shard (Primary + Secondary), kèm vai trò.
+// Trả về từng bản đọc thô để UI hiển thị nguyên văn; không kết luận thay người xem.
+// document = null nghĩa là node đó chưa có bản ghi (replication chưa kịp) hoặc đọc lỗi (có error).
+async function readMemberCopies(docId, clients, getReplicaSetStatus) {
+  const status = await getReplicaSetStatus(clients);
 
-  for (const [shard, clients] of Object.entries(shardClients)) {
-    let status;
+  // clients[index] khớp members[index] vì cùng thứ tự khai báo.
+  const reads = status.members.map(async (member, index) => {
+    if (member.health !== 1 || !['PRIMARY', 'SECONDARY'].includes(member.stateStr)) return null;
+    const role = member.stateStr;
     try {
-      status = await getReplicaSetStatus(clients);
+      const document = await clients[index]
+        .db('seminar')
+        .collection('documents')
+        .findOne({ docId }, { readPreference: role === 'PRIMARY' ? 'primary' : 'secondary' });
+      return { node: member.name, role, document };
     } catch (error) {
-      lastError = error;
-      continue;
+      return { node: member.name, role, document: null, error: error.message };
     }
+  });
 
-    // Chỉ xét Secondary đang khoẻ; clients[index] khớp members[index] vì cùng thứ tự khai báo.
-    for (const [index, member] of status.members.entries()) {
-      if (member.stateStr !== 'SECONDARY' || member.health !== 1) continue;
-
-      let document;
-      try {
-        document = await clients[index]
-          .db('seminar')
-          .collection('documents')
-          .findOne({ docId }, { readPreference: 'secondary' });
-      } catch (error) {
-        lastError = error;
-        continue;
-      }
-
-      if (document) return { shard, secondary: member.name, document };
-    }
-  }
-
-  // Không tìm thấy bản sao; nếu có lỗi kết nối thì ném lỗi gốc để dễ debug.
-  if (lastError) throw lastError;
-  return null;
+  return (await Promise.all(reads)).filter(Boolean);
 }
 
-module.exports = { findSecondaryCopy };
+module.exports = { readMemberCopies };

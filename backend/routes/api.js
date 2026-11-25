@@ -4,7 +4,7 @@ const { randomUUID } = require('node:crypto');
 const Docker = require('dockerode');
 const express = require('express');
 const { MongoClient } = require('mongodb');
-const { findSecondaryCopy } = require('../replication-check');
+const { readMemberCopies } = require('../replication-check');
 const { shardsFromExplain } = require('../shard-routing');
 
 const router = express.Router();
@@ -53,6 +53,8 @@ const shardClients = {
   shard2: [makeMemberClient(27217), makeMemberClient(27218), makeMemberClient(27219)],
 };
 const events = [];
+// Bằng chứng bản sao (nguyên document đọc từ từng node), mới nhất ở đầu; giữ trong RAM như events.
+const proofs = [];
 const streams = new Set();
 let lastSnapshot = "";
 let lastStatus = null;
@@ -60,7 +62,7 @@ let pushing = false;
 let immediateOffline = null;
 let stoppedContainer = null;
 let lastPrimaries = {};
-let cachedShard1Probe = null;
+const cachedDocIds = new Map();
 
 // Primary có thể đang tắt, nên thử lần lượt từng member tới khi có node trả lời.
 async function getReplicaSetStatus(members) {
@@ -107,7 +109,7 @@ async function pushSnapshot(offlineHost) {
       // Cụm chết: vẫn đẩy connected=false để UI không báo "Đã kết nối cụm" giả.
       status = { ...(lastStatus || {}), connected: false };
     }
-    const snapshot = JSON.stringify({ status, events });
+    const snapshot = JSON.stringify({ status, events, proofs });
     if (snapshot === lastSnapshot) return;
     lastSnapshot = snapshot;
     for (const response of streams) {
@@ -227,7 +229,7 @@ async function testReadWrite(id) {
   const collection = client.db('seminar').collection('documents');
   // Chọn docId có hash rơi đúng shard1 để bước 05 chứng minh được Primary mới của
   // shard1 vẫn nhận ghi, thay vì "ghi đâu đó trong cụm rồi tin là thành công".
-  const shard1DocId = await pickDocIdForShard('shard1');
+  const shard1DocId = await pickDocIdForShard('shard1', (n) => `probe-${String(n).padStart(2, '0')}`);
   const docId = shard1DocId || `test-${id}`;
   try {
     await collection.insertOne({ docId, purpose: 'failover-check', createdAt: new Date() });
@@ -261,15 +263,18 @@ async function explainShards(docId) {
 
 // Tìm một docId rơi vào shard mong muốn. Với khóa hashed, ~50% ứng viên khớp nên
 // vòng lặp gần như dừng ở lần thử đầu.
-async function pickDocIdForShard(shardName) {
-  if (shardName === 'shard1' && cachedShard1Probe) return cachedShard1Probe;
+// makeId(n) sinh docId ứng viên; kết quả cache theo (shard, kiểu id) để các lần bấm sau
+// luôn cùng một docId — điều kiện để so sánh trước/sau failover trên đúng một bản ghi.
+async function pickDocIdForShard(shardName, makeId) {
+  const cacheKey = `${shardName}:${makeId(1)}`;
+  if (cachedDocIds.has(cacheKey)) return cachedDocIds.get(cacheKey);
   for (let n = 1; n <= 50; n += 1) {
-    const docId = `probe-${String(n).padStart(2, '0')}`;
+    const docId = makeId(n);
     const { sharded, shards } = await explainShards(docId);
     if (!sharded) return null;
     // Chunk có thể vừa migrate giữa lúc explain và lúc ghi; xác suất thấp ở demo này.
     if (shards.length === 1 && shards[0] === shardName) {
-      if (shardName === 'shard1') cachedShard1Probe = docId;
+      cachedDocIds.set(cacheKey, docId);
       return docId;
     }
   }
@@ -288,22 +293,45 @@ async function primaryOfShard(shardName) {
   }
 }
 
-// Đọc mẫu qua mongos, rồi đọc lại đúng document đó từ một Secondary — đó mới là
-// bằng chứng replication, vì riêng Primary không nói lên điều gì.
-async function verifyReplication(id) {
+// Đọc một bản ghi cố định của shard1 qua mongos, rồi đọc lại nguyên document đó trực tiếp từ
+// từng member khoẻ (Primary + Secondary) và so khớp toàn bộ trường. Cùng docId ở mọi lần bấm
+// nên bản chụp trước/sau failover so sánh được với nhau. Bản chụp lưu vào `proofs` để UI
+// hiển thị nguyên văn thay vì chỉ một dòng log.
+async function captureReplicationProof(id, trigger) {
   const collection = client.db('seminar').collection('documents');
-  const sample = await collection.findOne(
-    { docId: /^demo-/ },
-    { projection: { _id: 0, docId: 1, value: 1 } },
-  );
-  if (!sample) throw new Error('Generate sample data before verifying a replica copy');
+  const docId = (await pickDocIdForShard('shard1', (n) => `demo-${String(n).padStart(5, '0')}`)) ?? 'demo-00001';
+  const viaMongos = await collection.findOne({ docId });
+  if (!viaMongos) throw new Error('Generate sample data before verifying a replica copy');
 
-  const copy = await findSecondaryCopy(sample.docId, shardClients, getReplicaSetStatus);
-  if (!copy) throw new Error(`No healthy Secondary has ${sample.docId} yet; wait briefly and retry`);
-  if (copy.document.value !== sample.value) throw new Error(`Replica copy of ${sample.docId} does not match`);
+  const copies = await readMemberCopies(docId, shardClients.shard1, getReplicaSetStatus);
+  const secondaries = copies.filter((copy) => copy.role === 'SECONDARY' && copy.document);
+  if (!secondaries.length) throw new Error(`No healthy Secondary has ${docId} yet; wait briefly and retry`);
+  // Replica giữ nguyên thứ tự trường của oplog nên so chuỗi JSON là đủ chặt cho demo này.
+  const expected = JSON.stringify(viaMongos);
+  if (copies.some((copy) => copy.document && JSON.stringify(copy.document) !== expected)) {
+    throw new Error(`Replica copy of ${docId} does not match`);
+  }
 
-  log('replication', `Verified ${sample.docId} on Secondary ${copy.secondary} (${copy.shard})`, id);
-  return { ok: true, docId: sample.docId, shard: copy.shard, secondary: copy.secondary, value: copy.document.value };
+  proofs.unshift({
+    id,
+    trigger,
+    at: new Date().toISOString(),
+    docId,
+    shard: 'shard1',
+    stoppedNode: stoppedContainer,
+    primary: copies.find((copy) => copy.role === 'PRIMARY')?.node ?? null,
+    viaMongos,
+    copies,
+  });
+  proofs.length = Math.min(proofs.length, 4);
+
+  return { docId, secondaries: secondaries.map((copy) => copy.node), primary: proofs[0].primary };
+}
+
+async function verifyReplication(id) {
+  const { docId, secondaries } = await captureReplicationProof(id, 'manual');
+  log('replication', `Verified ${docId} on Secondary ${secondaries.join(', ')} (shard1)`, id);
+  return { ok: true, docId, shard: 'shard1', secondaries };
 }
 
 // Không hard-code node nào là Primary: hỏi replica set trước, vì sau mỗi lần bầu cử
@@ -315,6 +343,13 @@ async function stopCurrentPrimary(id) {
   const target = Object.entries(demoContainers).find(([, node]) => node.host === primary?.name);
   if (!target) throw new Error('Could not map Shard 1 Primary to an allowed demo container');
   const [nodeName, node] = target;
+  // Chụp bản "trước failover" ngay trước khi tắt. Lỗi (vd chưa seed) không được chặn việc tắt node.
+  try {
+    const before = await captureReplicationProof(id, 'before-stop');
+    log('replication', `Captured pre-failover copy of ${before.docId} (Primary ${before.primary})`, id);
+  } catch (error) {
+    log('replication', `Skipped pre-failover copy: ${error.message}`, id);
+  }
   const container = (await dockerClient()).getContainer(node.container);
   const info = await container.inspect();
   if (info.State.Running) await container.stop({ t: 1 });
@@ -350,7 +385,7 @@ router.get('/stream', (req, res) => {
   setImmediate(pushSnapshot);
 });
 router.get('/status', endpoint(async () => getStatus()));
-router.get('/events', (req, res) => res.json({ events }));
+router.get('/events', (req, res) => res.json({ events, proofs }));
 router.post('/seed', endpoint(seedDocuments));
 router.post('/verify-replication', endpoint(verifyReplication));
 router.post('/failover/stop-primary', endpoint(stopCurrentPrimary));
