@@ -25,7 +25,6 @@ function StatePill({ state }) {
 }
 
 const shortNode = (name) => name.split(":")[0];
-const roleOrder = { PRIMARY: 0, SECONDARY: 1 };
 const scrollBehavior = () => (window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth");
 
 const PROOF_KIND = {
@@ -44,66 +43,78 @@ function pickProofs(proofs) {
   return { before: marker, after: marker === latest ? null : latest };
 }
 
-function ProofNode({ name, role, copy, reference, source }) {
-  let match = { cls: "ok", text: "✓ Khớp mongos" };
-  if (source) match = { cls: "src", text: "Bản gốc qua mongos" };
-  else if (!copy.document) match = { cls: "warn", text: copy.error ? "Lỗi đọc" : "Chưa có bản ghi" };
-  else if (JSON.stringify(copy.document) !== reference) match = { cls: "bad", text: "✗ Lệch bản gốc" };
+const proofLabel = (kind, proof) => (kind === "after" && !proof.stoppedNode ? "SAU KHI NODE QUAY LẠI" : PROOF_KIND[kind].badge);
+const MATCH = {
+  ok: ["ok", "✓ Khớp mongos"],
+  missing: ["warn", "Chưa có bản ghi"],
+  error: ["bad", "Lỗi đọc"],
+  bad: ["bad", "✗ Lệch bản gốc"],
+};
+
+// Trạng thái của một node trong một bản chụp. null = bản chụp chưa tồn tại (cột đang chờ).
+function proofCell(proof, node) {
+  if (!proof) return null;
+  const copy = proof.copies.find((item) => shortNode(item.node) === node);
+  if (!copy) return { state: proof.stoppedNode === node ? "down" : "silent" };
+  let match = "ok";
+  if (!copy.document) match = copy.error ? "error" : "missing";
+  else if (JSON.stringify(copy.document) !== JSON.stringify(proof.viaMongos)) match = "bad";
+  return { state: "up", role: copy.role, match };
+}
+
+function ProofCell({ cell, prev }) {
+  if (!cell) return <td className="proof-cell is-empty">—</td>;
+  if (cell.state !== "up") {
+    return <td className="proof-cell is-down"><b>{cell.state === "down" ? "ĐÃ TẮT" : "—"}</b><small>không trả lời</small></td>;
+  }
+  const changed = prev?.state === "up" && prev.role !== cell.role;
+  const [matchClass, matchText] = MATCH[cell.match];
   return (
-    <li className={`proof-node ${role === "PRIMARY" ? "is-primary-node" : ""}`}>
-      <div className="proof-node-head">
-        <b>{name}</b>
-        <StatePill state={role} />
-        <span className={`proof-match ${match.cls}`}>{match.text}</span>
+    <td className={`proof-cell ${cell.role === "PRIMARY" ? "is-primary" : ""}`}>
+      <div className="cell-main">
+        <StatePill state={cell.role} />
+        {changed && <span className="tag">đổi vai · trước: {prev.role}</span>}
       </div>
-      {copy.document ? (
-        <dl className="proof-fields">
-          {Object.entries(copy.document).map(([key, value]) => (
-            <div key={key}><dt>{key}</dt><dd title={String(value)}>{key === "createdAt" ? String(value).slice(0, 10) : String(value)}</dd></div>
-          ))}
-        </dl>
-      ) : <p className="proof-missing">{copy.error || "Replication chưa kịp chép bản ghi này."}</p>}
-    </li>
+      <small className={matchClass}>{matchText}</small>
+    </td>
   );
 }
 
-function ProofCard({ proof, kind }) {
-  const { cls, badge } = PROOF_KIND[kind];
-  const reference = JSON.stringify(proof.viaMongos);
-  const nodes = [...proof.copies].sort((a, b) => roleOrder[a.role] - roleOrder[b.role]);
-  const downNode = proof.stoppedNode && !nodes.some((copy) => shortNode(copy.node) === proof.stoppedNode) ? proof.stoppedNode : null;
+function ProofHead({ proof, kind }) {
+  if (!proof) {
+    return <th className="proof-col is-ghost"><div className="proof-col-top"><span className="proof-badge">{PROOF_KIND[kind].badge}</span></div><span className="proof-col-meta">Chưa có bản chụp</span></th>;
+  }
+  const answered = proof.copies.filter((copy) => copy.document).length;
   return (
-    <article className={`proof-card ${cls}`}>
-      <header>
-        <span className="proof-badge">{kind === "after" && !proof.stoppedNode ? "SAU KHI NODE QUAY LẠI" : badge}</span>
+    <th className={`proof-col ${PROOF_KIND[kind].cls}`}>
+      <div className="proof-col-top">
+        <span className="proof-badge">{proofLabel(kind, proof)}</span>
         <time>{new Date(proof.at).toLocaleTimeString([], { hour12: false })}</time>
-      </header>
-      <p className="proof-meta">Primary lúc đọc: <b>{proof.primary ? shortNode(proof.primary) : "không rõ"}</b> · {nodes.length} node trả lời · docId <code>{proof.docId}</code></p>
-      <ul className="proof-nodes">
-        <ProofNode name="mongos" role="ROUTER" copy={{ document: proof.viaMongos }} reference={reference} source />
-        {nodes.map((copy) => <ProofNode key={copy.node} name={shortNode(copy.node)} role={copy.role} copy={copy} reference={reference} />)}
-        {downNode && (
-          <li className="proof-node is-down">
-            <div className="proof-node-head"><b>{downNode}</b><span className="proof-match down">Đã tắt · không trả lời</span></div>
-          </li>
-        )}
-      </ul>
-    </article>
+      </div>
+      <span className="proof-col-meta">Primary lúc đọc: <b>{proof.primary ? shortNode(proof.primary) : "không rõ"}</b> · {answered} node trả lời</span>
+    </th>
   );
 }
 
-function ProofGhost({ kind }) {
-  const text = kind === "before"
-    ? "Chưa có bản trước failover. Bấm bước 04: hệ thống tự chụp bản này ngay trước khi tắt Primary."
-    : "Chưa có bản sau failover. Chờ sơ đồ hiện Primary mới, rồi bấm lại bước 03.";
+// JSON nguyên văn từng node, thu gọn mặc định để bảng chính chỉ nói điều thay đổi.
+function ProofRaw({ columns }) {
   return (
-    <article className="proof-card is-ghost">
-      <header><span className="proof-badge">{PROOF_KIND[kind].badge}</span></header>
-      <p>{text}</p>
-      <ul className="proof-nodes ghost" aria-hidden="true">
-        {[0, 1, 2].map((i) => <li className="proof-node" key={i}><i /><i /></li>)}
-      </ul>
-    </article>
+    <details className="proof-raw">
+      <summary>Xem JSON do từng node trả về</summary>
+      <div className="proof-raw-grid">
+        {columns.map(({ proof, kind }) => (
+          <div key={proof.id}>
+            <h3>{proofLabel(kind, proof)}</h3>
+            {[{ node: "mongos", role: "ROUTER", document: proof.viaMongos }, ...[...proof.copies].sort((a, b) => a.node.localeCompare(b.node))].map((copy) => (
+              <div className="proof-raw-node" key={copy.node}>
+                <div><b>{shortNode(copy.node)}</b><StatePill state={copy.role} /></div>
+                <pre>{copy.document ? JSON.stringify(copy.document, null, 2) : copy.error || "Chưa có bản ghi"}</pre>
+              </div>
+            ))}
+          </div>
+        ))}
+      </div>
+    </details>
   );
 }
 
@@ -118,21 +129,60 @@ function ProofCompare({ proofs }) {
       </ol>
     );
   }
-  const compared = before && after;
-  const same = compared && JSON.stringify(before.viaMongos) === JSON.stringify(after.viaMongos);
-  const primaryText = compared && before.primary && after.primary
-    ? (before.primary === after.primary ? `Primary vẫn là ${shortNode(after.primary)}` : `Primary: ${shortNode(before.primary)} → ${shortNode(after.primary)}`)
+  const left = before ?? after;
+  const leftKind = before ? "before" : "now";
+  const right = before ? after : null;
+  const same = right && JSON.stringify(left.viaMongos) === JSON.stringify(right.viaMongos);
+  const primaryText = right && left.primary && right.primary
+    ? (left.primary === right.primary ? `Primary vẫn là ${shortNode(right.primary)}` : `Primary: ${shortNode(left.primary)} → ${shortNode(right.primary)}`)
     : "";
+  // Hàng cố định theo tên node để cùng một node luôn nằm cùng hàng ở cả hai cột.
+  const nodes = [...new Set([left, right].filter(Boolean).flatMap((proof) => [
+    ...proof.copies.map((copy) => shortNode(copy.node)),
+    ...(proof.stoppedNode ? [proof.stoppedNode] : []),
+  ]))].sort();
+  const columns = [{ proof: left, kind: leftKind }, ...(right ? [{ proof: right, kind: "after" }] : [])];
   return (
     <div className="proof-compare">
-      {compared && (
+      {right && (
         <p className={`proof-verdict ${same ? "ok" : "bad"}`}>
           {same ? "✓ Cùng docId, cùng _id, nội dung giống hệt: dữ liệu không mất khi Primary chết." : "✗ Hai bản chụp khác nhau. Kiểm tra lại dữ liệu."}
           <span>{primaryText}</span>
         </p>
       )}
-      {before ? <ProofCard proof={before} kind="before" /> : <ProofCard proof={after} kind="now" />}
-      {compared ? <ProofCard proof={after} kind="after" /> : <ProofGhost kind={before ? "after" : "before"} />}
+      <div className="proof-doc">
+        <div className="proof-doc-head"><span>Bản ghi <code>{left.docId}</code> · {left.shard} · đọc qua mongos</span><em>Ô "✓ Khớp" = node trả về đúng bản này, từng trường một</em></div>
+        <dl className="proof-fields">
+          {Object.entries(left.viaMongos).map(([key, value]) => (
+            <div key={key}><dt>{key}</dt><dd title={String(value)}>{key === "createdAt" ? String(value).slice(0, 10) : String(value)}</dd></div>
+          ))}
+        </dl>
+      </div>
+      <div className="proof-table-wrap">
+        <table className="proof-matrix" aria-label="Vai trò và kết quả đọc của từng node, trước và sau failover">
+          <thead>
+            <tr>
+              <th scope="col" className="proof-corner">Node</th>
+              <ProofHead proof={left} kind={leftKind} />
+              <ProofHead proof={right} kind="after" />
+            </tr>
+          </thead>
+          <tbody>
+            {nodes.map((node) => {
+              const leftCell = proofCell(left, node);
+              return (
+                <tr key={node}>
+                  <th scope="row" className="proof-rowhead">{node}</th>
+                  <ProofCell cell={leftCell} />
+                  <ProofCell cell={proofCell(right, node)} prev={leftCell} />
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+      {!right && <p className="proof-hint">{before ? "Chưa có bản sau failover. Chờ sơ đồ hiện Primary mới, rồi bấm lại bước 03." : "Chưa có bản trước failover để so sánh. Bấm bước 04: hệ thống tự chụp bản trước rồi mới tắt Primary."}</p>}
+      <ProofRaw columns={columns} />
     </div>
   );
 }
