@@ -390,14 +390,8 @@ export default function App() {
         </div>
       </section>
 
-      <section className="metrics-grid">
-        <article className="metric-card"><span className="metric-label">TỔNG BẢN GHI</span><strong>{total.toLocaleString("vi-VN")}</strong><span className="metric-foot">seminar.documents</span></article>
-        <article className="metric-card"><span className="metric-label">SỐ SHARD</span><strong>{status?.shards?.length ?? "—"}<small> / 2</small></strong><span className="metric-foot">khóa shard băm · docId</span></article>
-        <article className="metric-card"><span className="metric-label">REPLICA SET</span><strong>3<small> node / bộ</small></strong><span className="metric-foot">1 primary + 2 secondary</span></article>
-        <article className="metric-card"><span className="metric-label">BỘ ĐỊNH TUYẾN</span><strong className="router-value">{status?.router || "—"}</strong><span className="metric-foot">yêu cầu do mongos định tuyến</span></article>
-      </section>
-
       <section className="content-grid">
+        <div className="side-stack">
         <article className="panel distribution-panel">
           <div className="panel-heading"><div><p className="eyebrow">PHÂN BỔ DỮ LIỆU</p><h2>Phân bổ giữa các shard</h2></div><span className="live-label"><span className="dot" /> TRỰC TIẾP</span></div>
           <p className="panel-copy">Bản ghi được chia theo hash(docId). Thanh này đếm bản ghi nằm vật lý trên mỗi shard — không phải số node còn sống.</p>
@@ -420,12 +414,11 @@ export default function App() {
                 <div className="dist-cards">
                   {distribution.map((item, index) => {
                     const share = distributionTotal ? item.documents / distributionTotal * 100 : 0;
-                    const diff = Math.round(item.documents - distributionTotal / distribution.length);
                     return (
                       <div className={`dist-card dist-card-${index + 1}`} key={item.shard}>
                         <span className="dist-card-name"><i />{item.shard}</span>
                         <strong>{item.documents.toLocaleString("vi-VN")}<small> bản ghi</small></strong>
-                        <span className="dist-card-foot">{distributionTotal ? `${share.toFixed(1)}% · ${diff > 0 ? "+" : ""}${diff.toLocaleString("vi-VN")} so với chia đều` : "0% · chờ dữ liệu"}</span>
+                        <span className="dist-card-foot">{distributionTotal ? `${share.toFixed(1).replace(".", ",")}% tổng số bản ghi` : "0% · chờ dữ liệu"}</span>
                       </div>
                     );
                   })}
@@ -437,6 +430,14 @@ export default function App() {
           </div>
           <div className="note"><span>i</span><p>Shard băm trải các dải hash lên chunk. Tỉ lệ thực tế có thể lệch; MongoDB không hứa chia đúng 50/50.</p></div>
         </article>
+
+        <section className="metrics-grid">
+          <article className="metric-card"><span className="metric-label">TỔNG BẢN GHI</span><strong>{total.toLocaleString("vi-VN")}</strong><span className="metric-foot">seminar.documents</span></article>
+          <article className="metric-card"><span className="metric-label">SỐ SHARD</span><strong>{status?.shards?.length ?? "—"}<small> / 2</small></strong><span className="metric-foot">khóa shard băm · docId</span></article>
+          <article className="metric-card"><span className="metric-label">REPLICA SET</span><strong>3<small> node / bộ</small></strong><span className="metric-foot">1 primary + 2 secondary</span></article>
+          <article className="metric-card"><span className="metric-label">BỘ ĐỊNH TUYẾN</span><strong className="router-value">{status?.router || "—"}</strong><span className="metric-foot">yêu cầu do mongos định tuyến</span></article>
+        </section>
+        </div>
 
         <article className="panel controls-panel" ref={controlsRef}>
           <div className="panel-heading"><div><p className="eyebrow">KỊCH BẢN TƯƠNG TÁC</p><h2>6 bước trình diễn</h2></div><span className="step-index">LÀM THEO THỨ TỰ</span></div>
