@@ -364,3 +364,4 @@ footer{font-size:10px}
 @media(min-width:1100px){.controls-panel{display:flex;flex-direction:column}.controls-panel .action-list{flex:1;grid-auto-rows:1fr}.controls-panel .action-button,.controls-panel .walkthrough-checkpoint{align-items:center}}
 .side-stack .distribution-panel .dist-wrap{flex:1;align-content:center;margin-bottom:0}
 .side-stack .distribution-panel .note{margin-top:18px}
+.dist-track:has(.dist-bar.is-empty) .dist-mid{display:none}
