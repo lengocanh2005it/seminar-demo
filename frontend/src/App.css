@@ -219,10 +219,112 @@ footer{font-size:10px}
 @media(max-width:899px){.eyebrow,.metric-label,.step-index,.busy-state,.panel-copy,.distribution-meta span,.note p,.walkthrough-copy,.action-button small,.walkthrough-checkpoint small{font-size:12px}.terminal-hint,.empty-state,.node-health,.shard-heading-copy small,.shard-doc-count,.config-copy small,.config-members i,.replication-guide{font-size:11px}.node-card .state-pill,.node-heading strong,.metric-foot,.architecture-tag small,.action-icon,.checkpoint-number,.distribution-meta strong,.replica-title strong,.member-name,.error-banner,.terminal-title,.terminal-live,footer{font-size:11px}.panel-heading h2{font-size:18px}.action-button b,.walkthrough-checkpoint b{font-size:13px}.brand,.connection,.live-label{font-size:11px}.terminal-screen{font-size:12px}.terminal-line time,.terminal-operation,.terminal-id{font-size:11px}}
 .topology-panel .walkthrough-copy,.distribution-panel .panel-copy,.controls-panel .note p{font-size:13px;line-height:1.55}
 
+/* ===== Biểu đồ phân bổ shard ===== */
+.controls-panel,.proof-panel{scroll-margin-top:16px}
+.dist-wrap{display:grid;gap:14px;margin-top:2px}
+.dist-track{position:relative;padding-top:22px}
+.dist-mid{position:absolute;left:50%;top:16px;bottom:-5px;z-index:2;border-left:2px dashed #1c382d99;pointer-events:none}
+.dist-mid small{position:absolute;top:-17px;left:0;transform:translateX(-50%);white-space:nowrap;font:500 11px "Be Vietnam Pro",sans-serif;color:#6b7a70}
+.dist-bar{display:flex;height:48px;border-radius:12px;overflow:hidden;background:#edf0eb;box-shadow:inset 0 0 0 1px #e1e6dc}
+.dist-bar.is-empty{background:repeating-linear-gradient(135deg,#f1f4ee 0 10px,#e8ece4 10px 20px);align-items:center;justify-content:center}
+.dist-empty-text{font:500 13px "Be Vietnam Pro",sans-serif;color:#6b7a70}
+.dist-seg{display:flex;align-items:center;justify-content:space-between;gap:10px;min-width:0;padding:0 16px;white-space:nowrap;font:600 14px "Be Vietnam Pro",sans-serif;transition:width .35s ease}
+.dist-seg em{font-style:normal;font-weight:500;font-size:13px}
+.dist-seg-1{background:linear-gradient(90deg,#a6c96e,#c8de92);color:#22401a}
+.dist-seg-2{background:linear-gradient(90deg,#4a7d69,#6c9a85);color:#fff}
+.dist-cards{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.dist-card{display:grid;gap:4px;padding:14px 16px;border:1px solid #e3e8df;border-left-width:4px;border-radius:10px;background:#fafbf8}
+.dist-card-1{border-left-color:#a6c96e}
+.dist-card-2{border-left-color:#4a7d69}
+.dist-card-name{display:flex;align-items:center;gap:8px;font:600 13px "Be Vietnam Pro",sans-serif;color:#42544a}
+.dist-card-name i{width:10px;height:10px;border-radius:3px;background:#a6c96e}
+.dist-card-2 .dist-card-name i{background:#4a7d69}
+.dist-card strong{font:700 28px "Be Vietnam Pro",sans-serif;letter-spacing:-.04em;color:#19392c;font-variant-numeric:tabular-nums}
+.dist-card strong small{font:500 13px "Be Vietnam Pro",sans-serif;letter-spacing:0;color:#7b887f}
+.dist-card-foot{font-size:13px;color:#6b7a70}
+
+/* ===== Bảng bằng chứng bản sao ===== */
+.ghost-button{border:1px solid #d6ddd2;background:#fff;color:#3d5a49;border-radius:8px;padding:7px 12px;font:600 12px "Be Vietnam Pro",sans-serif;cursor:pointer;white-space:nowrap}
+.ghost-button:hover{background:#f3f7ef}
+.ghost-button:focus-visible{outline:2px solid #78a94e;outline-offset:2px}
 .proof-panel{margin-top:14px}
-.proof-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:12px}
-.proof-card{border:1px solid var(--theme-border);border-radius:8px;padding:12px;background:var(--theme-surface-raised)}
-.proof-card header{display:flex;justify-content:space-between;gap:8px}
-.proof-meta{font-size:12px;color:var(--theme-muted);margin:6px 0}
-.proof-copy{margin-top:8px}
-.proof-copy pre{margin:4px 0 0;padding:8px;border-radius:6px;background:var(--theme-page);font-size:11px;overflow:auto}
+.proof-compare{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
+.proof-verdict{grid-column:1/-1;display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:6px 16px;margin:0;padding:12px 16px;border-radius:10px;font:600 14px "Be Vietnam Pro",sans-serif}
+.proof-verdict span{font-weight:500;font-size:13px}
+.proof-verdict.ok{background:#e9f3df;color:#35592a;border:1px solid #c9dcb4}
+.proof-verdict.bad{background:#fdeceb;color:#8a3329;border:1px solid #f0c4bd}
+.proof-card{display:flex;flex-direction:column;gap:11px;min-width:0;padding:16px;border:1px solid #e1e6dc;border-top-width:3px;border-radius:12px;background:#fbfcfa}
+.proof-card.before{border-top-color:#d9a63c}
+.proof-card.after{border-top-color:#6aa24a}
+.proof-card.now{border-top-color:#8aa89a}
+.proof-card header{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.proof-card time{font:500 12px "Be Vietnam Pro",sans-serif;color:#7a877e;font-variant-numeric:tabular-nums}
+.proof-badge{padding:4px 10px;border-radius:999px;background:#eef1ed;color:#66756b;font:700 11px "Be Vietnam Pro",sans-serif;letter-spacing:.06em}
+.proof-card.before .proof-badge{background:#fbf0d6;color:#85600f}
+.proof-card.after .proof-badge{background:#e3f0d8;color:#3d6a2a}
+.proof-card.now .proof-badge{background:#e6eee9;color:#46685a}
+.proof-meta{margin:0;font-size:13px;line-height:1.5;color:#66756b}
+.proof-meta b{color:#1c382d}
+.proof-meta code{font:12px ui-monospace,Consolas,monospace;color:#1c382d}
+.proof-nodes{list-style:none;margin:0;padding:0;display:grid;gap:8px}
+.proof-node{padding:11px 13px;border:1px solid #e4e9e0;border-radius:9px;background:#fff}
+.proof-node.is-primary-node{border-color:#b9d19c;background:#f6faf0}
+.proof-node.is-down{border-style:dashed;border-color:#e0b2aa;background:#fff7f5}
+.proof-node-head{display:flex;align-items:center;flex-wrap:wrap;gap:8px}
+.proof-node-head b{font-size:14px;color:#1c382d}
+.proof-node-head .state-pill{margin-left:0;padding:3px 7px;font-size:10px}
+.proof-match{margin-left:auto;font:600 12px "Be Vietnam Pro",sans-serif}
+.proof-match.ok{color:#3f7a2c}
+.proof-match.src{color:#6b7a70;font-weight:500}
+.proof-match.warn{color:#98690f}
+.proof-match.bad,.proof-match.down{color:#b3392c}
+.proof-fields{display:flex;flex-wrap:wrap;gap:6px;margin:10px 0 0}
+.proof-fields div{display:inline-flex;align-items:baseline;gap:6px;max-width:100%;padding:3px 8px;border-radius:6px;background:#f1f4ee}
+.proof-fields dt{font-size:11px;color:#7b887f}
+.proof-fields dd{margin:0;font:12px ui-monospace,Consolas,monospace;color:#1d2b26;overflow-wrap:anywhere}
+.proof-missing{margin:8px 0 0;font-size:12px;color:#98690f}
+.proof-card.is-ghost{border-style:dashed;border-top-style:dashed;background:transparent}
+.proof-card.is-ghost>p{margin:0;font-size:13px;line-height:1.55;color:#6b7a70}
+.proof-nodes.ghost .proof-node{display:grid;gap:8px;border-style:dashed;background:transparent}
+.proof-nodes.ghost i{display:block;height:9px;border-radius:5px;background:#e9ede5}
+.proof-nodes.ghost i:nth-child(2){width:68%}
+.proof-steps{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin:0;padding:0;list-style:none}
+.proof-steps li{display:flex;gap:12px;padding:15px;border:1px dashed #d3dbcd;border-radius:12px;font-size:13px;line-height:1.55;color:#5f6e64}
+.proof-steps .n{flex:0 0 32px;height:32px;display:grid;place-items:center;border-radius:9px;background:#e8f0df;color:#4c7239;font:700 12px "Be Vietnam Pro",sans-serif}
+.proof-steps strong{display:block;margin-bottom:2px;color:#1c382d;font-size:14px}
+
+/* ===== Giao diện tối ===== */
+[data-theme="dark"] .dist-mid{border-color:#dce6dfaa}
+[data-theme="dark"] .dist-mid small,[data-theme="dark"] .dist-empty-text,[data-theme="dark"] .dist-card-foot{color:var(--theme-muted)}
+[data-theme="dark"] .dist-bar{background:var(--theme-track);box-shadow:inset 0 0 0 1px var(--theme-border)}
+[data-theme="dark"] .dist-bar.is-empty{background:repeating-linear-gradient(135deg,#1d2a22 0 10px,#223128 10px 20px)}
+[data-theme="dark"] .dist-card,[data-theme="dark"] .proof-card{background:var(--theme-surface-raised);border-color:var(--theme-border)}
+[data-theme="dark"] .dist-card-1{border-left-color:#a6c96e}
+[data-theme="dark"] .dist-card-2{border-left-color:#6c9a85}
+[data-theme="dark"] .dist-card-name{color:var(--theme-text)}
+[data-theme="dark"] .dist-card strong,[data-theme="dark"] .proof-node-head b,[data-theme="dark"] .proof-meta b,[data-theme="dark"] .proof-meta code,[data-theme="dark"] .proof-steps strong{color:var(--theme-text-strong)}
+[data-theme="dark"] .dist-card strong small,[data-theme="dark"] .proof-meta,[data-theme="dark"] .proof-card time,[data-theme="dark"] .proof-steps li,[data-theme="dark"] .proof-card.is-ghost>p{color:var(--theme-muted)}
+[data-theme="dark"] .ghost-button{background:var(--theme-surface-raised);border-color:var(--theme-border);color:var(--theme-text)}
+[data-theme="dark"] .ghost-button:hover{background:var(--theme-surface-hover)}
+[data-theme="dark"] .proof-card.before{border-top-color:#c99a38}
+[data-theme="dark"] .proof-card.before .proof-badge{background:#3d3220;color:#f0cd80}
+[data-theme="dark"] .proof-card.after .proof-badge,[data-theme="dark"] .proof-card.now .proof-badge{background:var(--theme-accent-bg);color:var(--theme-accent)}
+[data-theme="dark"] .proof-badge{background:#2b3730;color:var(--theme-muted)}
+[data-theme="dark"] .proof-node{background:var(--theme-surface);border-color:var(--theme-border-soft)}
+[data-theme="dark"] .proof-node.is-primary-node{background:#22301f;border-color:#45613a}
+[data-theme="dark"] .proof-node.is-down{background:var(--theme-danger-bg);border-color:#70463f}
+[data-theme="dark"] .proof-fields div{background:#26332b}
+[data-theme="dark"] .proof-fields dt{color:var(--theme-muted-soft)}
+[data-theme="dark"] .proof-fields dd{color:var(--theme-text)}
+[data-theme="dark"] .proof-match.ok{color:#a9d68a}
+[data-theme="dark"] .proof-match.src{color:var(--theme-muted)}
+[data-theme="dark"] .proof-match.warn,[data-theme="dark"] .proof-missing{color:#f0cd80}
+[data-theme="dark"] .proof-match.bad,[data-theme="dark"] .proof-match.down{color:var(--theme-danger)}
+[data-theme="dark"] .proof-verdict.ok{background:#22301f;border-color:#45613a;color:#c4e4a8}
+[data-theme="dark"] .proof-verdict.bad{background:var(--theme-error-bg);border-color:var(--theme-error-border);color:var(--theme-error)}
+[data-theme="dark"] .proof-nodes.ghost i{background:#2b3730}
+[data-theme="dark"] .proof-steps li{border-color:var(--theme-border)}
+[data-theme="dark"] .proof-steps .n{background:var(--theme-accent-bg);color:var(--theme-accent)}
+
+@media(max-width:900px){.proof-compare,.proof-steps{grid-template-columns:1fr}}
+@media(max-width:600px){.dist-cards{grid-template-columns:1fr}.dist-seg{padding:0 10px;font-size:12px}.dist-seg em{font-size:11px}}

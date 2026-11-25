@@ -24,6 +24,119 @@ function StatePill({ state }) {
   return <span className={`state-pill ${primary ? "primary" : "secondary"}`}>{state || "KHÔNG RÕ"}</span>;
 }
 
+const shortNode = (name) => name.split(":")[0];
+const roleOrder = { PRIMARY: 0, SECONDARY: 1 };
+const scrollBehavior = () => (window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth");
+
+const PROOF_KIND = {
+  before: { cls: "before", badge: "TRƯỚC FAILOVER" },
+  after: { cls: "after", badge: "SAU FAILOVER" },
+  now: { cls: "now", badge: "HIỆN TẠI" },
+};
+
+// Chọn cặp bản chụp để so sánh: mốc "trước failover" (tự chụp lúc bấm bước 04) và bản mới nhất.
+// Bản bấm tay ở bước 03 trước khi tắt chỉ hiện khi chưa có mốc nào, nên panel luôn tối đa hai cột.
+function pickProofs(proofs) {
+  const latest = proofs[0];
+  const marker = proofs.find((proof) => proof.trigger === "before-stop");
+  if (!latest) return { before: null, after: null };
+  if (!marker) return { before: null, after: latest };
+  return { before: marker, after: marker === latest ? null : latest };
+}
+
+function ProofNode({ name, role, copy, reference, source }) {
+  let match = { cls: "ok", text: "✓ Khớp mongos" };
+  if (source) match = { cls: "src", text: "Bản gốc qua mongos" };
+  else if (!copy.document) match = { cls: "warn", text: copy.error ? "Lỗi đọc" : "Chưa có bản ghi" };
+  else if (JSON.stringify(copy.document) !== reference) match = { cls: "bad", text: "✗ Lệch bản gốc" };
+  return (
+    <li className={`proof-node ${role === "PRIMARY" ? "is-primary-node" : ""}`}>
+      <div className="proof-node-head">
+        <b>{name}</b>
+        <StatePill state={role} />
+        <span className={`proof-match ${match.cls}`}>{match.text}</span>
+      </div>
+      {copy.document ? (
+        <dl className="proof-fields">
+          {Object.entries(copy.document).map(([key, value]) => (
+            <div key={key}><dt>{key}</dt><dd title={String(value)}>{key === "createdAt" ? String(value).slice(0, 10) : String(value)}</dd></div>
+          ))}
+        </dl>
+      ) : <p className="proof-missing">{copy.error || "Replication chưa kịp chép bản ghi này."}</p>}
+    </li>
+  );
+}
+
+function ProofCard({ proof, kind }) {
+  const { cls, badge } = PROOF_KIND[kind];
+  const reference = JSON.stringify(proof.viaMongos);
+  const nodes = [...proof.copies].sort((a, b) => roleOrder[a.role] - roleOrder[b.role]);
+  const downNode = proof.stoppedNode && !nodes.some((copy) => shortNode(copy.node) === proof.stoppedNode) ? proof.stoppedNode : null;
+  return (
+    <article className={`proof-card ${cls}`}>
+      <header>
+        <span className="proof-badge">{kind === "after" && !proof.stoppedNode ? "SAU KHI NODE QUAY LẠI" : badge}</span>
+        <time>{new Date(proof.at).toLocaleTimeString([], { hour12: false })}</time>
+      </header>
+      <p className="proof-meta">Primary lúc đọc: <b>{proof.primary ? shortNode(proof.primary) : "không rõ"}</b> · {nodes.length} node trả lời · docId <code>{proof.docId}</code></p>
+      <ul className="proof-nodes">
+        <ProofNode name="mongos" role="ROUTER" copy={{ document: proof.viaMongos }} reference={reference} source />
+        {nodes.map((copy) => <ProofNode key={copy.node} name={shortNode(copy.node)} role={copy.role} copy={copy} reference={reference} />)}
+        {downNode && (
+          <li className="proof-node is-down">
+            <div className="proof-node-head"><b>{downNode}</b><span className="proof-match down">Đã tắt · không trả lời</span></div>
+          </li>
+        )}
+      </ul>
+    </article>
+  );
+}
+
+function ProofGhost({ kind }) {
+  const text = kind === "before"
+    ? "Chưa có bản trước failover. Bấm bước 04: hệ thống tự chụp bản này ngay trước khi tắt Primary."
+    : "Chưa có bản sau failover. Chờ sơ đồ hiện Primary mới, rồi bấm lại bước 03.";
+  return (
+    <article className="proof-card is-ghost">
+      <header><span className="proof-badge">{PROOF_KIND[kind].badge}</span></header>
+      <p>{text}</p>
+      <ul className="proof-nodes ghost" aria-hidden="true">
+        {[0, 1, 2].map((i) => <li className="proof-node" key={i}><i /><i /></li>)}
+      </ul>
+    </article>
+  );
+}
+
+function ProofCompare({ proofs }) {
+  const { before, after } = pickProofs(proofs);
+  if (!before && !after) {
+    return (
+      <ol className="proof-steps">
+        <li><b className="n">03</b><span><strong>Đọc bản sao</strong>Bấm "Kiểm tra bản sao": cùng một bản ghi được đọc từ Primary và cả hai Secondary.</span></li>
+        <li><b className="n">04</b><span><strong>Tắt Primary</strong>Hệ thống tự chụp bản "trước failover" ngay trước khi tắt node.</span></li>
+        <li><b className="n">03</b><span><strong>So sánh</strong>Khi sơ đồ có Primary mới, bấm lại bước 03 để đặt hai bản chụp cạnh nhau.</span></li>
+      </ol>
+    );
+  }
+  const compared = before && after;
+  const same = compared && JSON.stringify(before.viaMongos) === JSON.stringify(after.viaMongos);
+  const primaryText = compared && before.primary && after.primary
+    ? (before.primary === after.primary ? `Primary vẫn là ${shortNode(after.primary)}` : `Primary: ${shortNode(before.primary)} → ${shortNode(after.primary)}`)
+    : "";
+  return (
+    <div className="proof-compare">
+      {compared && (
+        <p className={`proof-verdict ${same ? "ok" : "bad"}`}>
+          {same ? "✓ Cùng docId, cùng _id, nội dung giống hệt: dữ liệu không mất khi Primary chết." : "✗ Hai bản chụp khác nhau. Kiểm tra lại dữ liệu."}
+          <span>{primaryText}</span>
+        </p>
+      )}
+      {before ? <ProofCard proof={before} kind="before" /> : <ProofCard proof={after} kind="now" />}
+      {compared ? <ProofCard proof={after} kind="after" /> : <ProofGhost kind={before ? "after" : "before"} />}
+    </div>
+  );
+}
+
 // Lỗi mạng của fetch/driver là tiếng Anh kỹ thuật; đổi sang câu nói được trước lớp.
 function describeError(message) {
   if (/Failed to fetch|Load failed/i.test(message)) return "Không gọi được backend ở cổng 4000. Kiểm tra cửa sổ backend còn chạy không.";
@@ -41,6 +154,7 @@ function translateEvent(message) {
     .replace(/^Verified (.+) on Secondary (.+) \((.+)\)$/, "Đã xác minh $1 trên Secondary $2 ($3)")
     .replace(/^Captured pre-failover copy of (.+) \(Primary (.+)\)$/, "Đã chụp bản ghi $1 trước failover (Primary $2)")
     .replace(/^Skipped pre-failover copy: (.+)$/, "Bỏ qua bản chụp trước failover: $1")
+    .replace(/^Stopping current Primary (.+) \((.+)\)$/, "Đang tắt Primary hiện tại $1 ($2)")
     .replace(/^Stopped current Primary (.+) \((.+)\)$/, "Đã tắt Primary hiện tại $1 ($2)")
     .replace(/^(.+): new primary observed (.+) \(previous (.+)\)$/, "$1: phát hiện Primary mới $2 (trước đó $3)")
     .replace(/^Restarted (.+); waiting for it to rejoin the replica set$/, "Đã khởi động lại $1; chờ node tham gia lại replica set")
@@ -62,6 +176,8 @@ export default function App() {
   const [error, setError] = useState("");
   const [pulseNode, setPulseNode] = useState("");
   const pulseTimer = useRef(null);
+  const proofRef = useRef(null);
+  const controlsRef = useRef(null);
 
   // Đổi theme bằng data-theme trên <html>; localStorage để reload vẫn giữ lựa chọn.
   useLayoutEffect(() => {
@@ -117,6 +233,8 @@ export default function App() {
     try {
       await request(path, "POST");
       await refresh();
+      // Bước 03 xong: cuộn tới bảng bằng chứng để khán giả thấy ngay kết quả.
+      if (name === "replication") setTimeout(() => proofRef.current?.scrollIntoView({ behavior: scrollBehavior(), block: "start" }), 150);
     } catch (err) {
       setError(describeError(err.message));
     } finally {
@@ -125,7 +243,8 @@ export default function App() {
   }
 
   // Dữ liệu dẫn xuất cho phần hiển thị; không lưu vào state để tránh trùng nguồn sự thật.
-  const distribution = status?.distribution || [];
+  // $collStats trả shard theo thứ tự bất kỳ; sắp theo tên để shard1 luôn trái, màu cố định.
+  const distribution = [...(status?.distribution || [])].sort((a, b) => a.shard.localeCompare(b.shard));
   const total = status?.totalDocuments || 0;
   const distributionTotal = distribution.reduce((sum, item) => sum + item.documents, 0);
   const shards = status?.shards || [];
@@ -232,23 +351,35 @@ export default function App() {
         <article className="panel distribution-panel">
           <div className="panel-heading"><div><p className="eyebrow">PHÂN BỔ DỮ LIỆU</p><h2>Phân bổ giữa các shard</h2></div><span className="live-label"><span className="dot" /> TRỰC TIẾP</span></div>
           <p className="panel-copy">Bản ghi được chia theo hash(docId). Thanh này đếm bản ghi nằm vật lý trên mỗi shard — không phải số node còn sống.</p>
-          <div className="distribution-list">
+          <div className="dist-wrap">
             {distribution.length ? (
               <>
-                <div className="distribution-stack" role="img" aria-label={`Phân bổ dung lượng giữa ${distribution.length} shard`}>
-                  {distribution.map((item) => {
+                <div className="dist-track">
+                  <i className="dist-mid" aria-hidden="true"><small>50% · chia đều</small></i>
+                  <div className={`dist-bar ${distributionTotal ? "" : "is-empty"}`} role="img" aria-label={`Phân bổ bản ghi giữa ${distribution.length} shard`}>
+                    {distributionTotal ? distribution.map((item, index) => {
+                      const share = item.documents / distributionTotal * 100;
+                      return (
+                        <span className={`dist-seg dist-seg-${index + 1}`} key={item.shard} style={{ width: `${share}%` }}>
+                          {share >= 14 && <><b>{item.shard}</b><em>{item.documents.toLocaleString("vi-VN")} · {share.toFixed(1)}%</em></>}
+                        </span>
+                      );
+                    }) : <span className="dist-empty-text">Chưa có dữ liệu · bấm bước 01 để tạo 10.000 bản ghi</span>}
+                  </div>
+                </div>
+                <div className="dist-cards">
+                  {distribution.map((item, index) => {
                     const share = distributionTotal ? item.documents / distributionTotal * 100 : 0;
-                    return <span className="distribution-segment" key={item.shard} style={{ width: `${share}%` }} />;
+                    const diff = Math.round(item.documents - distributionTotal / distribution.length);
+                    return (
+                      <div className={`dist-card dist-card-${index + 1}`} key={item.shard}>
+                        <span className="dist-card-name"><i />{item.shard}</span>
+                        <strong>{item.documents.toLocaleString("vi-VN")}<small> bản ghi</small></strong>
+                        <span className="dist-card-foot">{distributionTotal ? `${share.toFixed(1)}% · ${diff > 0 ? "+" : ""}${diff.toLocaleString("vi-VN")} so với chia đều` : "0% · chờ dữ liệu"}</span>
+                      </div>
+                    );
                   })}
                 </div>
-                {distribution.map((item, index) => {
-                  const share = distributionTotal ? item.documents / distributionTotal * 100 : 0;
-                  return (
-                    <div className="distribution-row" key={item.shard}>
-                      <div className="distribution-meta"><span className={`distribution-key distribution-key-${index + 1}`} /><strong>{item.shard}</strong><span>{item.documents.toLocaleString("vi-VN")} bản ghi <b>{share.toFixed(1)}%</b></span></div>
-                    </div>
-                  );
-                })}
               </>
             ) : (
               <p className="empty-state">Đang chờ thống kê shard…</p>
@@ -257,48 +388,34 @@ export default function App() {
           <div className="note"><span>i</span><p>Shard băm trải các dải hash lên chunk. Tỉ lệ thực tế có thể lệch; MongoDB không hứa chia đúng 50/50.</p></div>
         </article>
 
-        <article className="panel controls-panel">
+        <article className="panel controls-panel" ref={controlsRef}>
           <div className="panel-heading"><div><p className="eyebrow">KỊCH BẢN TƯƠNG TÁC</p><h2>6 bước trình diễn</h2></div><span className="step-index">LÀM THEO THỨ TỰ</span></div>
           <p className="walkthrough-copy">Xem bản ghi trải đều lên các shard, kiểm tra bản sao ngay trên Secondary, rồi quan sát bầu cử Primary. Sau bước 04 hãy chờ Primary mới, bấm lại bước 02, rồi kết thúc ở bước 06.</p>
           <div className="note"><span>i</span><p>Sau bước 04, node đỏ nhưng bước 02 vẫn <b>thành công</b>: lệnh ghi đi tới <b>Primary mới</b>, không đi tới node vừa tắt. Replication giữ lệnh ghi sống; sharding quyết định lệnh ghi nằm ở shard nào.</p></div>
           <div className="action-list">
             <button className={`action-button ${actionState("seed", "seed")}`} disabled={!!busy} onClick={() => act("seed", "/seed")}><span className="action-icon">01</span><span><b>Tạo dữ liệu mẫu</b><small>Thêm 10.000 bản ghi · xem phân bổ shard ở trên</small></span><span className="arrow">↗</span></button>
             <button className={`action-button ${actionState("read-write", "read-write")}`} disabled={!!busy} onClick={() => act("read-write", "/test-read-write")}><span className="action-icon">02</span><span><b>Thử đọc / ghi</b><small>Ghi, đọc, rồi xoá một bản ghi tạm</small></span><span className="arrow">↗</span></button>
-            <button className={`action-button ${actionState("replication", "replication")}`} disabled={!!busy || !total} onClick={() => act("replication", "/verify-replication")}><span className="action-icon">03</span><span><b>Kiểm tra bản sao</b><small>Đọc chính bản ghi mẫu trực tiếp từ một Secondary</small></span><span className="arrow">↗</span></button>
+            <button className={`action-button ${actionState("replication", "replication")}`} disabled={!!busy || !total} onClick={() => act("replication", "/verify-replication")}><span className="action-icon">03</span><span><b>Kiểm tra bản sao</b><small>Đọc cùng một bản ghi từ Primary và cả hai Secondary</small></span><span className="arrow">↗</span></button>
             {/* Nút 04 bị khoá khi đã có node bị tắt: mỗi lần chỉ stop 1 node. */}
             <button className={`action-button danger ${actionState("stop", "failover")}`} disabled={!!busy || !!status?.stoppedNode} onClick={() => act("stop", "/failover/stop-primary")}><span className="action-icon">04</span><span><b>Tắt Primary của Shard 1</b><small>{status?.stoppedNode ? `Đã tắt: ${status.stoppedNode} · chờ Primary mới` : "Tắt Primary và quan sát bầu cử"}</small></span><span className="arrow">↗</span></button>
             {/* Bước 05 không có endpoint riêng: nó là "bấm lại bước 02" sau khi bầu cử xong,
                 nên đánh dấu ✓ dựa trên số lần đã chạy read-write (> 1). */}
-            <div className={`walkthrough-checkpoint ${readWriteCount > 1 ? "is-done" : ""}`}><span className="checkpoint-number">05</span><span><b>Kiểm tra Primary mới có ghi được</b><small>Khi sơ đồ hiện Primary mới, bấm lại bước 02 (ghi) rồi bước 03 (đọc lại đúng bản ghi cũ). Đối chiếu hai bản chụp ở bảng bằng chứng.</small></span></div>
+            <div className={`walkthrough-checkpoint ${readWriteCount > 1 ? "is-done" : ""}`}><span className="checkpoint-number">05</span><span><b>Kiểm tra Primary mới có ghi được</b><small>Khi sơ đồ hiện Primary mới, bấm lại bước 02 (ghi) rồi bước 03 (đọc lại đúng bản ghi cũ). Bảng bằng chứng tự đặt bản trước và bản sau cạnh nhau.</small></span></div>
             <button className={`action-button ${actionState("restart", "restart")}`} disabled={!!busy || !status?.stoppedNode} onClick={() => act("restart", "/failover/restart-node")}><span className="action-icon">06</span><span><b>Khởi động lại node đã tắt</b><small>Xác nhận node tham gia lại với vai trò Secondary</small></span><span className="arrow">↗</span></button>
           </div>
           {busy && <p className="busy-state"><span className="spinner" /> Đang chạy {BUSY_LABELS[busy] || busy}…</p>}
         </article>
       </section>
 
-      {/* Nguyên document đọc trực tiếp từ từng node, không phải log tóm tắt. Bấm bước 03 trước
-          và sau bước 04 để có hai bản chụp cùng docId, khác Primary. */}
-      <section className="panel proof-panel">
-        <div className="panel-heading"><div><p className="eyebrow">BẰNG CHỨNG BẢN SAO</p><h2>Cùng một bản ghi, đọc từ từng node</h2></div><span className="step-index">BƯỚC 03</span></div>
-        {proofs.length ? (
-          <div className="proof-grid">
-            {proofs.map((proof) => (
-              <article className="proof-card" key={proof.id}>
-                <header>
-                  <strong>{proof.trigger === "before-stop" ? `Trước khi tắt ${proof.primary?.split(":")[0]} (tự chụp)` : proof.stoppedNode ? `Sau khi tắt ${proof.stoppedNode}` : "Cụm đủ 3 node"}</strong>
-                  <time>{new Date(proof.at).toLocaleTimeString([], { hour12: false })}</time>
-                </header>
-                <p className="proof-meta">docId <code>{proof.docId}</code> · {proof.shard} · Primary lúc đọc: <b>{proof.primary?.split(":")[0] ?? "không rõ"}</b></p>
-                {[{ node: "mongos", role: "ROUTER", document: proof.viaMongos }, ...proof.copies].map((copy) => (
-                  <div className="proof-copy" key={copy.node}>
-                    <div><b>{copy.node.split(":")[0]}</b> <StatePill state={copy.role} /></div>
-                    <pre>{copy.document ? JSON.stringify(copy.document, null, 2) : copy.error || "Chưa có bản ghi"}</pre>
-                  </div>
-                ))}
-              </article>
-            ))}
-          </div>
-        ) : <p className="empty-state">Chưa có bản chụp. Bấm bước 03; bấm lại sau khi bầu Primary mới để so sánh.</p>}
+      {/* Nguyên document đọc trực tiếp từ từng node, không phải log tóm tắt. Bản "trước failover"
+          do bước 04 tự chụp; bấm bước 03 sau khi có Primary mới để có bản "sau". */}
+      <section className="panel proof-panel" ref={proofRef}>
+        <div className="panel-heading">
+          <div><p className="eyebrow">BẰNG CHỨNG BẢN SAO</p><h2>Cùng một bản ghi, đọc trực tiếp từ từng node</h2></div>
+          <button type="button" className="ghost-button" onClick={() => controlsRef.current?.scrollIntoView({ behavior: scrollBehavior(), block: "start" })}>↑ Về các bước</button>
+        </div>
+        <p className="panel-copy">Đây là nguyên document do mỗi node trả về, không phải dòng log tóm tắt. Backend so khớp từng trường với bản đọc qua mongos.</p>
+        <ProofCompare proofs={proofs} />
       </section>
 
       <section className="events-panel">

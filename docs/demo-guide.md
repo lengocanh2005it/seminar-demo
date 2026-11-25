@@ -96,7 +96,7 @@ Result: after ~2 seconds the node's card turns **red / Unavailable** on the map.
 
 ### Step 05 — Verify the new Primary can write
 
-Wait until the map shows a different node as **PRIMARY** in shard1 (usually a few seconds), then **click step 02 again**, then **click step 03 again** to take the "after" snapshot.
+Wait until the map shows a different node as **PRIMARY** in shard1 (about a second: `docker stop` is a graceful shutdown, so the old Primary steps down at once; a real crash would wait up to `electionTimeoutMillis`, ~10 s), then **click step 02 again**, then **click step 03 again** to take the "after" snapshot. The proof panel then shows **TRƯỚC FAILOVER** and **SAU FAILOVER** side by side, with a verdict bar that confirms the document is identical.
 
 > Say: "The replica set just elected a new Primary. I'll run read/write again — it still succeeds, even though the old Primary is down."
 

@@ -346,12 +346,15 @@ async function stopCurrentPrimary(id) {
   // Chụp bản "trước failover" ngay trước khi tắt. Lỗi (vd chưa seed) không được chặn việc tắt node.
   try {
     const before = await captureReplicationProof(id, 'before-stop');
-    log('replication', `Captured pre-failover copy of ${before.docId} (Primary ${before.primary})`, id);
+    log('replication', `Captured pre-failover copy of ${before.docId} (Primary ${before.primary})`);
   } catch (error) {
-    log('replication', `Skipped pre-failover copy: ${error.message}`, id);
+    log('replication', `Skipped pre-failover copy: ${error.message}`);
   }
   const container = (await dockerClient()).getContainer(node.container);
   const info = await container.inspect();
+  // Log trước khi dừng: docker stop mất ~1s, trong lúc đó Primary cũ nhường vai nên log
+  // "Primary mới" có thể đến trước log "Đã tắt". Dòng này giữ đúng thứ tự nhân quả cho người xem.
+  log('failover', `Stopping current Primary ${nodeName} (${node.container})`);
   if (info.State.Running) await container.stop({ t: 1 });
   stoppedContainer = nodeName;
   log('failover', `Stopped current Primary ${nodeName} (${node.container})`, id);
