@@ -48,6 +48,8 @@ npm ci
 npm run dev
 ```
 
+Docker Desktop will also list two containers with status **Exited**, `replica-sets-init` and `sharding-init`. That is expected: they are one-shot init jobs, not part of the 10 main containers (3 config, 6 shard, 1 `mongos`).
+
 Open <http://localhost:5173>. If you have run it before, the data is still in the Docker volumes, so you can skip `sharding-init` (re-running it is safe — the script checks for existing state).
 
 The backend controls Docker through Docker Desktop's named pipe, but may only stop/start the 3 allowlisted containers `seminar-shard1a|b|c`. It never touches shard2 or the config servers.
@@ -96,7 +98,7 @@ Result: after ~2 seconds the node's card turns **red / Unavailable** on the map.
 
 ### Step 05 — Verify the new Primary can write
 
-Wait until the map shows a different node as **PRIMARY** in shard1 (about a second: `docker stop` is a graceful shutdown, so the old Primary steps down at once; a real crash would wait up to `electionTimeoutMillis`, ~10 s), then **click step 02 again**, then **click step 03 again** to take the "after" snapshot. The proof panel then shows **TRƯỚC FAILOVER** and **SAU FAILOVER** as a node x before/after matrix (one fixed row per node, role changes flagged "doi vai", the stopped node shown red), with a verdict bar that confirms the document is identical. Raw JSON per node is under a collapsible.
+Wait until the map shows a different node as **PRIMARY** in shard1 (about a second: `docker stop` is a graceful shutdown, so the old Primary steps down at once; a real crash would wait up to `electionTimeoutMillis`, ~10 s), then **click step 02 again**, then **click step 03 again** to take the "after" snapshot. The proof panel then shows **TRƯỚC FAILOVER** and **SAU FAILOVER** as a node x before/after matrix (one fixed row per node, role changes flagged "đổi vai", the stopped node shown red), with a verdict bar that confirms the document is identical. Raw JSON per node is under a collapsible.
 
 > Say: "The replica set just elected a new Primary. I'll run read/write again — it still succeeds, even though the old Primary is down."
 
@@ -111,6 +113,12 @@ Click **Khởi động lại node đã tắt** (Restart stopped node). The backe
 > Say: "The node comes back as a **Secondary**, it doesn't take the Primary role back. It syncs the data it missed from the current Primary."
 
 Result: the card is no longer red, and the label is SECONDARY.
+
+Wait until the node shows SECONDARY on the map, then **click step 03 once more**. The right-hand column of the proof panel becomes **SAU KHI NODE QUAY LẠI**, and the returned node shows "đổi vai" (back as a Secondary) with its copy matching `mongos` again.
+
+> Say: "The node still has all the old data, and it catches up on whatever it missed from the current Primary through replication."
+
+If you click step 03 too early, that node's row may read "Chưa có bản ghi" because it has not finished rejoining yet. Wait a moment and click again.
 
 ## Questions the class may ask
 
@@ -127,7 +135,7 @@ With one node left there is no majority (2/3), so no Primary can be elected and 
 The app connects to a single address. `mongos` uses metadata from the config servers to know which chunk sits on which shard, and merges results from multiple shards.
 
 **Why does the UI update so fast?**
-The backend pushes state over SSE (`GET /api/stream`) instead of the frontend polling. When you click stop, the backend also marks the node OFFLINE immediately instead of waiting for the MongoDB heartbeat (~10 seconds).
+The backend pushes state over SSE (`GET /api/stream`) instead of the frontend polling. When you click stop, the backend also marks the node OFFLINE immediately instead of waiting for MongoDB to notice (heartbeats run every 2 s, but a node is only declared down after `electionTimeoutMillis`, ~10 seconds).
 
 **Is data lost when the machine shuts down?**
 No. Data lives in Docker named volumes. `docker compose down` keeps the volumes; only `docker compose down -v` wipes them.
@@ -150,6 +158,8 @@ Stop the two `npm start` / `npm run dev` windows (Ctrl+C) before shutting the ma
 - **UI shows "Mất kết nối luồng trực tiếp" or "Không gọi được backend ở cổng 4000":** the backend isn't running or was stopped; check the backend window and port 4000.
 - **UI shows "Một node MongoDB đã tắt hoặc Docker chưa chạy":** Docker Desktop was closed or a container died; run `docker compose ps -a`.
 - **Step 06 says there is no node to restart:** the backend was restarted, so it lost the in-memory `stoppedContainer` state. Restart the backend **before** the demo, not in the middle.
+- **The Bằng chứng bản sao panel is empty:** proofs are kept in the backend's memory, so restarting the backend clears them. Click step 03 again (and take the "before" snapshot again by stopping the Primary, if you are mid-demo).
+- **UI loads but every call fails with 403 "Origin not allowed":** you opened the UI by the machine's IP. Use <http://localhost:5173> or <http://127.0.0.1:5173>.
 - **Port already in use:** check `Get-NetTCPConnection -LocalPort 27017,4000,5173`.
 - **Cannot stop the container:** the backend needs Docker Desktop running. It tries `dockerDesktopLinuxEngine` then `docker_engine`; set `DOCKER_SOCKET` to override.
 
